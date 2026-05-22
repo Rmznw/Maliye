@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --zinc-50: #fafafa;
+    --zinc-100: #f4f4f5;
+    --zinc-200: #e4e4e7;
+    --zinc-300: #d4d4d8;
+    --zinc-400: #a1a1aa;
+    --zinc-500: #71717a;
+    --zinc-600: #52525b;
+    --zinc-700: #3f3f46;
+    --zinc-800: #27272a;
+    --zinc-900: #18181b;
+    --zinc-950: #09090b;
+  }
+
+  body {
+    @apply bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.015em;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight text-zinc-900 dark:text-white;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold
+      transition-all duration-200 hover:bg-zinc-800 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none
+      shadow-[0_1px_2px_rgba(0,0,0,0.1),0_0_0_1px_rgba(255,255,255,0.1)_inset];
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl
+      bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700
+      text-zinc-900 dark:text-white text-sm font-semibold
+      transition-all duration-200 hover:bg-zinc-50 dark:hover:bg-zinc-700
+      active:scale-[0.97] disabled:opacity-50
+      shadow-[0_1px_2px_rgba(0,0,0,0.05)];
+  }
+
+  .input-zinc {
+    @apply w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700
+      rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-white
+      placeholder-zinc-400 dark:placeholder-zinc-500
+      focus:outline-none focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-white/5
+      focus:border-zinc-900 dark:focus:border-zinc-400
+      transition-all duration-200;
+  }
+
+  .card-zinc {
+    @apply bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800
+      rounded-[2rem] p-6 md:p-8
+      shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_15px_-3px_rgba(0,0,0,0.02)];
+  }
+
+  .stat-label {
+    @apply text-[10px] font-bold uppercase tracking-[0.1em] text-zinc-500 dark:text-zinc-400;
+  }
+
+  .mobile-nav-blur {
+    @apply bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl border-t border-zinc-100 dark:border-zinc-800;
+  }
+}
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+::selection {
+  @apply bg-zinc-900 text-white;
+}
