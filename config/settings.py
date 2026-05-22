@@ -9,13 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-key-change-me")
 DEBUG = config("DEBUG", default=True, cast=bool)
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS", default="192.168.100.52,localhost,127.0.0.1", cast=Csv()
-)
-for _var in ("RAILWAY_PUBLIC_DOMAIN", "RAILWAY_PRIVATE_DOMAIN"):
-    _domain = os.environ.get(_var, "")
-    if _domain:
-        ALLOWED_HOSTS.append(_domain)
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=Csv())
 
 INSTALLED_APPS = [
     "django.contrib.admin",
