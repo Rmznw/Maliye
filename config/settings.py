@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from decouple import config, Csv
 from datetime import timedelta
@@ -5,13 +6,14 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-change-me')
-DEBUG = config('DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
+SECRET_KEY = os.environ.get('SECRET_KEY') or config('SECRET_KEY', default='django-insecure-dev-key-change-me')
+DEBUG = os.environ.get('DEBUG', '').lower() not in ('false', '0', 'no') if 'DEBUG' in os.environ else config('DEBUG', default=True, cast=bool)
+_allowed = os.environ.get('ALLOWED_HOSTS') or config('ALLOWED_HOSTS', default='localhost,127.0.0.1')
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 # Accept Railway-generated domains automatically
 ALLOWED_HOSTS += [h for h in [
-    config('RAILWAY_PUBLIC_DOMAIN', default=''),
-    config('RAILWAY_PRIVATE_DOMAIN', default=''),
+    os.environ.get('RAILWAY_PUBLIC_DOMAIN', ''),
+    os.environ.get('RAILWAY_PRIVATE_DOMAIN', ''),
 ] if h]
 
 INSTALLED_APPS = [
@@ -66,18 +68,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-_db_url = config('DATABASE_URL', default=None)
+# os.environ is checked first — works reliably in Docker/Railway without a .env file
+_db_url = os.environ.get('DATABASE_URL') or config('DATABASE_URL', default=None)
 if _db_url:
     DATABASES = {'default': dj_database_url.parse(_db_url, conn_max_age=600)}
 else:
+    # Railway Postgres plugin also exports individual PG* vars
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME', default='talyp_finance'),
-            'USER': config('DB_USER', default='postgres'),
-            'PASSWORD': config('DB_PASSWORD', default='secret'),
-            'HOST': config('DB_HOST', default='localhost'),
-            'PORT': config('DB_PORT', default='5432'),
+            'NAME':     os.environ.get('PGDATABASE') or config('DB_NAME',     default='talyp_finance'),
+            'USER':     os.environ.get('PGUSER')     or config('DB_USER',     default='postgres'),
+            'PASSWORD': os.environ.get('PGPASSWORD') or config('DB_PASSWORD', default='secret'),
+            'HOST':     os.environ.get('PGHOST')     or config('DB_HOST',     default='localhost'),
+            'PORT':     os.environ.get('PGPORT')     or config('DB_PORT',     default='5432'),
         }
     }
 
@@ -136,13 +140,10 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
 }
 
-CORS_ALLOWED_ORIGINS = config(
-    'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3000,http://localhost:5173',
-    cast=Csv(),
-)
+_cors = os.environ.get('CORS_ALLOWED_ORIGINS') or config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://localhost:5173')
+CORS_ALLOWED_ORIGINS = [h.strip() for h in _cors.split(',') if h.strip()]
 
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+REDIS_URL = os.environ.get('REDIS_URL') or config('REDIS_URL', default='redis://localhost:6379/0')
 
 CACHES = {
     'default': {
