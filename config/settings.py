@@ -167,3 +167,4 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TIMEZONE = TIME_ZONE
 
 UNSPLASH_ACCESS_KEY = config("UNSPLASH_ACCESS_KEY", default="")
+GROQ_API_KEY = config("GROQ_API_KEY", default="")

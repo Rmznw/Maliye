@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
+from django.db import models
 from django.db.models import Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
@@ -10,6 +12,36 @@ from rest_framework.views import APIView
 
 from apps.expenses.models import Expense
 from apps.income.models import Income
+
+
+SYSTEM_PROMPT = """Sen "Talyp Maliýe" atly Türkmenistan talyplar üçin niýetlenen maliýe programmasyndaky akylly AI geňeşçisiň.
+
+Esasy düzgünler:
+- HER WAGT diňe TÜRKMEN dilinde jogap ber. Başga dilde ýazma.
+- Ulanyjynyň hakyky maliýe maglumatlaryna esaslanýan, ANYK we PEÝDALY maslahat ber.
+- Sanlary we göterimi ulanyp, hakyky mysallar getir.
+- Gysga we düşnükli jogap ber (2-4 sözlem).
+- Mysal: "Bu aý iýmite 450 TMT sarp etdiňiz — bu býujetiňiziň 45%-i. Tygşytlamak üçin..."
+- Hiç wagt iňlisçe söz ulanma. Hemme zady türkmençe düşündir."""
+
+PARSE_SYSTEM_PROMPT = """You are a data extraction engine. Your ONLY job is to extract structured expense data from bank SMS messages or receipts.
+Output ONLY a valid raw JSON object — no markdown, no code fences, no explanation, no extra text whatsoever.
+If a field cannot be determined, use sensible defaults. Never add commentary."""
+
+
+def ask_ai(prompt: str, system: str = SYSTEM_PROMPT) -> str:
+    from groq import Groq
+    client = Groq(api_key=settings.GROQ_API_KEY)
+    completion = client.chat.completions.create(
+        model='llama-3.3-70b-versatile',
+        messages=[
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': prompt},
+        ],
+        max_tokens=600,
+        temperature=0.6,
+    )
+    return completion.choices[0].message.content.strip()
 
 
 class DashboardView(APIView):
@@ -156,3 +188,150 @@ class BalanceTrendView(APIView):
             data.append({"date": d.isoformat(), "balance": round(running_balance, 2)})
 
         return Response(data)
+
+
+class AIAdviceView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        from apps.goals.models import SavingsGoal
+
+        user = request.user
+        message = request.data.get('message', '').strip()
+        if not message:
+            return Response({'reply': 'Soralyňyzy ýazyň.'})
+
+        today = timezone.now().date()
+        total_income = (
+            Income.objects.filter(user=user, month__year=today.year, month__month=today.month)
+            .aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        )
+        total_expenses = (
+            Expense.objects.filter(user=user, date__year=today.year, date__month=today.month)
+            .aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        )
+        categories = (
+            Expense.objects.filter(user=user, date__year=today.year, date__month=today.month)
+            .values('category').annotate(total=Sum('amount')).order_by('-total')[:5]
+        )
+        goals = SavingsGoal.objects.filter(user=user, current_amount__lt=models.F('target_amount'))[:3]
+
+        balance = float(total_income) - float(total_expenses)
+        budget = float(user.monthly_budget or 0)
+        cat_lines = '\n'.join([f"  • {c['category']}: {c['total']} TMT" for c in categories]) or '  • maglumat ýok'
+        goal_lines = '\n'.join([f"  • {g.title}: {g.current_amount}/{g.target_amount} TMT ({g.progress_percentage:.0f}%)" for g in goals]) or '  • maksat ýok'
+        budget_used = round(float(total_expenses) / budget * 100, 1) if budget else 0
+
+        prompt = f"""Ulanyjynyň HAKYKY maliýe maglumatlary:
+
+👤 Ulanyjy: {user.username}
+📅 Aý: {today.strftime('%B %Y')}
+
+💰 GIRDEJI: {total_income} TMT
+💸 ÇYKDAJY: {total_expenses} TMT
+📊 BALANS: {balance:.2f} TMT
+🎯 BÝUJET: {budget} TMT ({budget_used}% ulanyldı)
+
+📂 Kategoriýa boýunça çykdajy:
+{cat_lines}
+
+🏆 Işjeň maksatlar:
+{goal_lines}
+
+❓ Ulanyjynyň soragy: {message}
+
+Bu hakyky maglumatlara esaslanyp, anyk we peýdaly maslahat ber. Maglumatlary göni ulanyp sanlary mention et."""
+
+        try:
+            reply = ask_ai(prompt)
+            return Response({'reply': reply})
+        except Exception as e:
+            return Response({'reply': f'Häzir jogap berip bilemok: {e}'})
+
+
+class ParseExpenseView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        text = request.data.get('text', '').strip()
+        if not text:
+            return Response({'error': 'Text required'}, status=400)
+
+        today = timezone.now().date().isoformat()
+        prompt = f"""Extract expense data from this bank SMS or receipt text.
+
+Text: "{text}"
+
+Return this exact JSON structure:
+{{
+  "title": "<merchant or short description, max 40 chars>",
+  "amount": <positive number, no currency symbol>,
+  "category": "<one of: food, transport, education, internet, leisure, health, other>",
+  "date": "<YYYY-MM-DD, use {today} if not in text>",
+  "notes": "<any extra context, empty string if none>"
+}}"""
+
+        try:
+            import json
+            import re
+            raw = ask_ai(prompt, system=PARSE_SYSTEM_PROMPT)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return Response({'error': 'Maglumat çykarylyp bilinmedi. Başga tekst synanyşyň.'}, status=400)
+            data = json.loads(match.group())
+            return Response(data)
+        except Exception as e:
+            return Response({'error': f'Skanirläp bolmady: {e}'}, status=500)
+
+
+class MonthlySummaryView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request):
+        from django.core.cache import cache
+        from apps.goals.models import SavingsGoal
+
+        user = request.user
+        today = timezone.now().date()
+
+        cache_key = f'monthly_summary:{user.id}:{today.year}:{today.month}:{today.day}'
+        cached = cache.get(cache_key)
+        if cached:
+            return Response({'summary': cached, 'cached': True})
+
+        total_income = (
+            Income.objects.filter(user=user, month__year=today.year, month__month=today.month)
+            .aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        )
+        total_expenses = (
+            Expense.objects.filter(user=user, date__year=today.year, date__month=today.month)
+            .aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        )
+        categories = (
+            Expense.objects.filter(user=user, date__year=today.year, date__month=today.month)
+            .values('category').annotate(total=Sum('amount')).order_by('-total')[:3]
+        )
+        goals_active = SavingsGoal.objects.filter(user=user, current_amount__lt=models.F('target_amount')).count()
+        goals_done = SavingsGoal.objects.filter(user=user, current_amount__gte=models.F('target_amount')).count()
+        cat_str = ', '.join([f"{c['category']}: {c['total']} TMT" for c in categories]) or 'ýok'
+        budget = user.monthly_budget or 0
+        savings = float(total_income) - float(total_expenses)
+        savings_rate = round(savings / float(total_income) * 100, 1) if total_income else 0
+        budget_used = round(float(total_expenses) / float(budget) * 100, 1) if budget else 0
+
+        prompt = f"""{today.strftime('%B %Y')} aýy üçin ulanyjynyň maliýe ýagdaýy:
+
+- Girdeji: {total_income} TMT
+- Çykdajy: {total_expenses} TMT | Býujet: {budget} TMT ({budget_used}% ulanyldı)
+- Tygşytlanan: {savings:.2f} TMT ({savings_rate}%)
+- Iň köp çykdajy: {cat_str}
+- Işjeň maksatlar: {goals_active} sany, tamamlanan: {goals_done} sany
+
+Bu hakyky sanlara esaslanyp 2-3 sözlem jemleýji baha ber. Anyk sanlary mention et. Höweslendiriji we amaly maslahat ber."""
+
+        try:
+            text = ask_ai(prompt)
+            cache.set(cache_key, text, 60 * 60 * 6)
+            return Response({'summary': text})
+        except Exception:
+            return Response({'summary': ''})
